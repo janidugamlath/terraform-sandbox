@@ -47,11 +47,6 @@ jobs:
           - random_pet
           - random_password
 
-    # Run job only if that module changed
-    if: |
-      (matrix.module == 'random_pet' && needs.changes.outputs.random_pet == 'true') ||
-      (matrix.module == 'random_password' && needs.changes.outputs.random_password == 'true')
-
     permissions:
       pull-requests: write
       contents: read
@@ -64,6 +59,11 @@ jobs:
 
       - name: Checkout Code
         uses: actions/checkout@v4
+
+      - name: Skip module if no changes
+        if: ${{ (matrix.module == 'random_pet' && needs.changes.outputs.random_pet != 'true') || 
+                 (matrix.module == 'random_password' && needs.changes.outputs.random_password != 'true') }}
+        run: echo "Skipping module ${matrix.module} as no changes detected." && exit 0
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -90,7 +90,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const plan = process.env.PLAN_DATA;
-
             const body = `
             ### Terraform Plan (${context.job})
 
@@ -102,7 +101,6 @@ jobs:
 
             </details>
             `;
-
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
@@ -133,7 +131,6 @@ jobs:
             });
 
             const pr = result.data[0];
-
             if (!pr) {
               console.log("No PR found.");
               return;
