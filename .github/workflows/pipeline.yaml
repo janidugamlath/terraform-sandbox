@@ -24,9 +24,9 @@ jobs:
         with:
           filters: |
             random_pet:
-              - 'tf-resouces/random_pet/**/*.tf'
+              - 'tf-resouces/random_pet/**'
             random_password:
-              - 'tf-resouces/random_password/**/*.tf'
+              - 'tf-resouces/random_password/**'
 
   # -------------------------------------------------
   # Terraform Random Pet
@@ -57,7 +57,7 @@ jobs:
         if: github.event_name == 'pull_request'
         id: plan
         run: terraform plan -no-color
-        continue-on-error: true
+        continue-on-error: false
 
       - name: Post Plan to PR
         if: github.event_name == 'pull_request'
@@ -146,7 +146,7 @@ jobs:
         if: github.event_name == 'pull_request'
         id: plan
         run: terraform plan -no-color
-        continue-on-error: true
+        continue-on-error: false
 
       - name: Post Plan to PR
         if: github.event_name == 'pull_request'
