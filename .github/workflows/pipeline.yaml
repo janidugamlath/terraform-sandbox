@@ -2,17 +2,19 @@ name: "Terraform Lifecycle"
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
+  # -------------------------------------------------
+  # Detect changed files
+  # -------------------------------------------------
   changes:
     runs-on: ubuntu-latest
     outputs:
       random_pet: ${{ steps.filter.outputs.random_pet }}
       random_password: ${{ steps.filter.outputs.random_password }}
-
     steps:
       - uses: actions/checkout@v4
 
@@ -25,18 +27,20 @@ jobs:
               - 'tf-resouces/random_pet/**/*.tf'
             random_password:
               - 'tf-resouces/random_password/**/*.tf'
+
+  # -------------------------------------------------
+  # Terraform Random Pet
+  # -------------------------------------------------
   terraform-random-pet:
-  needs: changes
-  if: needs.changes.outputs.random_pet == 'true'
-  runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.random_pet == 'true'
+    runs-on: ubuntu-latest
     permissions:
       pull-requests: write
       contents: read
-    
     defaults:
       run:
         working-directory: ./tf-resouces/random_pet
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -49,7 +53,6 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
-      # --- 1. PLAN (PR ONLY) ---
       - name: Terraform Plan
         if: github.event_name == 'pull_request'
         id: plan
@@ -57,10 +60,9 @@ jobs:
         continue-on-error: true
 
       - name: Post Plan to PR
-        uses: actions/github-script@v7
         if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
         env:
-          # Use a clear name and ensure we capture the STDOUT from the plan step
           PLAN_DATA: "${{ steps.plan.outputs.stdout }}"
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -68,16 +70,16 @@ jobs:
             const plan = process.env.PLAN_DATA;
             const output = `#### Terraform Plan 📖 \`${{ steps.plan.outcome }}\`
             
-            <details><summary>Show Plan Output</summary>
-            
-            \`\`\`terraform
-            ${plan}
-            \`\`\`
-            
-            </details>
-            
-            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
-            
+<details><summary>Show Plan Output</summary>
+
+\`\`\`terraform
+${plan}
+\`\`\`
+
+</details>
+
+*Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
@@ -85,7 +87,6 @@ jobs:
               body: output
             })
 
-      # --- 2. APPLY (MERGE TO MAIN ONLY) ---
       - name: Terraform Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: apply
@@ -99,16 +100,12 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            // 1. Find the PR associated with this merge commit
             const result = await github.rest.repos.listPullRequestsAssociatedWithCommit({
               owner: context.repo.owner,
               repo: context.repo.repo,
               commit_sha: context.sha,
             });
-
             const prNumber = result.data.length > 0 ? result.data[0].number : null;
-
-            // 2. If a PR exists, post the Apply output
             if (prNumber) {
               github.rest.issues.createComment({
                 issue_number: prNumber,
@@ -120,27 +117,23 @@ jobs:
               console.log("No associated PR found for this push.");
             }
 
-
-
-========= Random password ========
-
-
-
+  # -------------------------------------------------
+  # Terraform Random Password
+  # -------------------------------------------------
   terraform-random-password:
-  needs: changes
-  if: needs.changes.outputs.random_password == 'true'
-  runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.random_password == 'true'
+    runs-on: ubuntu-latest
     permissions:
       pull-requests: write
       contents: read
-    
     defaults:
       run:
         working-directory: ./tf-resouces/random_password
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -149,7 +142,6 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
-      # --- 1. PLAN (PR ONLY) ---
       - name: Terraform Plan
         if: github.event_name == 'pull_request'
         id: plan
@@ -157,10 +149,9 @@ jobs:
         continue-on-error: true
 
       - name: Post Plan to PR
-        uses: actions/github-script@v7
         if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
         env:
-          # Use a clear name and ensure we capture the STDOUT from the plan step
           PLAN_DATA: "${{ steps.plan.outputs.stdout }}"
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -168,16 +159,16 @@ jobs:
             const plan = process.env.PLAN_DATA;
             const output = `#### Terraform Plan 📖 \`${{ steps.plan.outcome }}\`
             
-            <details><summary>Show Plan Output</summary>
-            
-            \`\`\`terraform
-            ${plan}
-            \`\`\`
-            
-            </details>
-            
-            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
-            
+<details><summary>Show Plan Output</summary>
+
+\`\`\`terraform
+${plan}
+\`\`\`
+
+</details>
+
+*Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
@@ -185,7 +176,6 @@ jobs:
               body: output
             })
 
-      # --- 2. APPLY (MERGE TO MAIN ONLY) ---
       - name: Terraform Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: apply
@@ -199,16 +189,12 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            // 1. Find the PR associated with this merge commit
             const result = await github.rest.repos.listPullRequestsAssociatedWithCommit({
               owner: context.repo.owner,
               repo: context.repo.repo,
               commit_sha: context.sha,
             });
-
             const prNumber = result.data.length > 0 ? result.data[0].number : null;
-
-            // 2. If a PR exists, post the Apply output
             if (prNumber) {
               github.rest.issues.createComment({
                 issue_number: prNumber,
