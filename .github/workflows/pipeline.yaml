@@ -1,24 +1,67 @@
-name: "Terraform Lifecycle"
+name: Terraform Lifecycle
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
-  terraform:
-    name: "Terraform"
+
+  # -------------------------------------------------
+  # Detect which modules changed
+  # -------------------------------------------------
+  changes:
     runs-on: ubuntu-latest
+    outputs:a
+      random_pet: ${{ steps.filter.outputs.random_pet }}
+      random_password: ${{ steps.filter.outputs.random_password }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed files
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            random_pet:
+              - 'tf-resouces/random_pet/**'
+            random_password:
+              - 'tf-resouces/random_password/**'
+
+
+  # -------------------------------------------------
+  # Terraform job (runs per module using matrix)
+  # -------------------------------------------------
+  terraform:
+    needs: changes
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        module:
+          - random_pet
+          - random_password
+
+    # Run job only if that module changed
+    if: |
+      (matrix.module == 'random_pet' && needs.changes.outputs.random_pet == 'true') ||
+      (matrix.module == 'random_password' && needs.changes.outputs.random_password == 'true')
+
     permissions:
       pull-requests: write
       contents: read
-    
+
     defaults:
       run:
-        working-directory: ./tf-resouces/random_pet
+        working-directory: tf-resouces/${{ matrix.module }}
 
     steps:
+
       - name: Checkout Code
         uses: actions/checkout@v4
 
@@ -30,49 +73,52 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
-      # --- 1. PLAN (PR ONLY) ---
+      # -----------------------------
+      # Terraform Plan (PR)
+      # -----------------------------
       - name: Terraform Plan
         if: github.event_name == 'pull_request'
         id: plan
         run: terraform plan -no-color
-        continue-on-error: true
 
       - name: Post Plan to PR
-        uses: actions/github-script@v7
         if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
         env:
-          # Use a clear name and ensure we capture the STDOUT from the plan step
           PLAN_DATA: "${{ steps.plan.outputs.stdout }}"
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const plan = process.env.PLAN_DATA;
-            const output = `#### Terraform Plan 📖 \`${{ steps.plan.outcome }}\`
-            
-            <details><summary>Show Plan Output</summary>
-            
+
+            const body = `
+            ### Terraform Plan (${context.job})
+
+            <details><summary>Show Plan</summary>
+
             \`\`\`terraform
             ${plan}
             \`\`\`
-            
+
             </details>
-            
-            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
-            
+            `;
+
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: output
-            })
+              body: body
+            });
 
-      # --- 2. APPLY (MERGE TO MAIN ONLY) ---
+      # -----------------------------
+      # Terraform Apply (Merge to main)
+      # -----------------------------
       - name: Terraform Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: apply
         run: terraform apply -auto-approve -no-color
 
-      - name: Post Apply Results to PR
+      - name: Post Apply Result
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/github-script@v7
         env:
@@ -80,23 +126,32 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            // 1. Find the PR associated with this merge commit
             const result = await github.rest.repos.listPullRequestsAssociatedWithCommit({
               owner: context.repo.owner,
               repo: context.repo.repo,
               commit_sha: context.sha,
             });
 
-            const prNumber = result.data.length > 0 ? result.data[0].number : null;
+            const pr = result.data[0];
 
-            // 2. If a PR exists, post the Apply output
-            if (prNumber) {
-              github.rest.issues.createComment({
-                issue_number: prNumber,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: `### ✅ Terraform Apply Successful!\nThe infrastructure has been updated.\n\n<details><summary>Show Apply Output</summary>\n\n\`\`\`terraform\n${process.env.APPLY_OUT}\n\`\`\`\n\n</details>`
-              });
-            } else {
-              console.log("No associated PR found for this push.");
+            if (!pr) {
+              console.log("No PR found.");
+              return;
             }
+
+            github.rest.issues.createComment({
+              issue_number: pr.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `
+              ### Terraform Apply Successful
+
+              <details><summary>Show Apply Output</summary>
+
+              \`\`\`terraform
+              ${process.env.APPLY_OUT}
+              \`\`\`
+
+              </details>
+              `
+            });
