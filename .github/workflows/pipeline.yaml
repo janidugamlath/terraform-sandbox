@@ -2,25 +2,27 @@ name: "Terraform Lifecycle"
 
 on:
   pull_request:
-    branches: [main]
+    branches: [ main ]
   push:
-    branches: [main]
+    branches: [ main ]
 
 jobs:
+
   # -------------------------------------------------
-  # Detect changed files
+  # Detect changed Terraform modules
   # -------------------------------------------------
   changes:
     runs-on: ubuntu-latest
     outputs:
-      random_pet: ${{ steps.filter.outputs.random_pet }}
-      random_password: ${{ steps.filter.outputs.random_password }}
-    steps:
-      - uses: actions/checkout@v4
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
 
-      - name: Detect changed files
-        uses: dorny/paths-filter@v3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect changed modules
         id: filter
+        uses: dorny/paths-filter@v3
         with:
           filters: |
             random_pet:
@@ -28,20 +30,45 @@ jobs:
             random_password:
               - 'tf-resouces/random_password/**'
 
+      - name: Create matrix from changes
+        id: set-matrix
+        run: |
+          modules=()
+
+          if [[ "${{ steps.filter.outputs.random_pet }}" == "true" ]]; then
+            modules+=("\"random_pet\"")
+          fi
+
+          if [[ "${{ steps.filter.outputs.random_password }}" == "true" ]]; then
+            modules+=("\"random_password\"")
+          fi
+
+          matrix=$(printf "[%s]" "$(IFS=,; echo "${modules[*]}")")
+
+          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+
   # -------------------------------------------------
-  # Terraform Random Pet
+  # Terraform Job (Matrix)
   # -------------------------------------------------
-  terraform-random-pet:
+  terraform:
     needs: changes
-    if: needs.changes.outputs.random_pet == 'true'
+    if: needs.changes.outputs.matrix != '[]'
     runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        module: ${{ fromJson(needs.changes.outputs.matrix) }}
+
     permissions:
       pull-requests: write
       contents: read
+
     defaults:
       run:
-        working-directory: ./tf-resouces/random_pet
+        working-directory: ./tf-resouces/${{ matrix.module }}
+
     steps:
+
       - name: Checkout Code
         uses: actions/checkout@v4
 
@@ -57,7 +84,6 @@ jobs:
         if: github.event_name == 'pull_request'
         id: plan
         run: terraform plan -no-color
-        continue-on-error: false
 
       - name: Post Plan to PR
         if: github.event_name == 'pull_request'
@@ -68,9 +94,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const plan = process.env.PLAN_DATA;
-            const output = `#### Terraform Plan 📖 \`${{ steps.plan.outcome }}\`
-            
-            <details><summary>Show Plan Output</summary>
+
+            const output = `#### Terraform Plan 📖 (${process.env.MATRIX_MODULE})
+
+            <details><summary>Show Plan</summary>
 
             \`\`\`terraform
             ${plan}
@@ -78,14 +105,14 @@ jobs:
 
             </details>
 
-            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+            *Actor: @${context.actor}*`;
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: output
-            })
+            });
 
       - name: Terraform Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -105,102 +132,22 @@ jobs:
               repo: context.repo.repo,
               commit_sha: context.sha,
             });
+
             const prNumber = result.data.length > 0 ? result.data[0].number : null;
+
             if (prNumber) {
               github.rest.issues.createComment({
                 issue_number: prNumber,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: `### ✅ Terraform Apply Successful!\nThe infrastructure has been updated.\n\n<details><summary>Show Apply Output</summary>\n\n\`\`\`terraform\n${process.env.APPLY_OUT}\n\`\`\`\n\n</details>`
+                body: `### ✅ Terraform Apply Successful
+
+                <details><summary>Show Apply Output</summary>
+
+                \`\`\`terraform
+                ${process.env.APPLY_OUT}
+                \`\`\`
+
+                </details>`
               });
-            } else {
-              console.log("No associated PR found for this push.");
-            }
-  # -------------------------------------------------
-  # Terraform Random Password
-  # -------------------------------------------------
-  terraform-random-password:
-    needs: changes
-    if: needs.changes.outputs.random_password == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-      contents: read
-    defaults:
-      run:
-        working-directory: ./tf-resouces/random_password
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: true
-
-      - name: Terraform Init
-        run: terraform init
-
-      - name: Terraform Plan
-        if: github.event_name == 'pull_request'
-        id: plan
-        run: terraform plan -no-color
-        continue-on-error: false
-
-      - name: Post Plan to PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        env:
-          PLAN_DATA: "${{ steps.plan.outputs.stdout }}"
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const plan = process.env.PLAN_DATA;
-            const output = `#### Terraform Plan 📖 \`${{ steps.plan.outcome }}\`
-            
-            <details><summary>Show Plan Output</summary>
-
-            \`\`\`terraform
-            ${plan}
-            \`\`\`
-
-            </details>
-
-            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: output
-            })
-
-      - name: Terraform Apply
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        id: apply
-        run: terraform apply -auto-approve -no-color
-
-      - name: Post Apply Results to PR
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/github-script@v7
-        env:
-          APPLY_OUT: "${{ steps.apply.outputs.stdout }}"
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const result = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              commit_sha: context.sha,
-            });
-            const prNumber = result.data.length > 0 ? result.data[0].number : null;
-            if (prNumber) {
-              github.rest.issues.createComment({
-                issue_number: prNumber,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: `### ✅ Terraform Apply Successful!\nThe infrastructure has been updated.\n\n<details><summary>Show Apply Output</summary>\n\n\`\`\`terraform\n${process.env.APPLY_OUT}\n\`\`\`\n\n</details>`
-              });
-            } else {
-              console.log("No associated PR found for this push.");
             }
