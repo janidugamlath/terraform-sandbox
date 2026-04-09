@@ -48,7 +48,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_wrapper: true
+          terraform_wrapper: false
 
       - name: Terraform Init
         run: terraform init
@@ -116,7 +116,6 @@ jobs:
             } else {
               console.log("No associated PR found for this push.");
             }
-
   # -------------------------------------------------
   # Terraform Random Password
   # -------------------------------------------------
@@ -137,7 +136,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_wrapper: true
+          terraform_wrapper: false
 
       - name: Terraform Init
         run: terraform init
