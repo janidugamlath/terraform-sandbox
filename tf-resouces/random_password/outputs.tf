@@ -4,7 +4,7 @@ output "generated_db_name" {
 
 output "generated_password" {
   value     = random_password.password.result
-  sensitive = true
+  #sensitive = true
 }
 
 
