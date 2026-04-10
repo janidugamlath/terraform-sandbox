@@ -99,7 +99,7 @@ jobs:
           script: |
             const plan = process.env.PLAN_DATA;
 
-            const output = `#### Terraform Plan 📖 (${status})
+            const output = `#### Terraform Plan 📖 \`${{ steps.plan.outcome }}\`
 
             <details><summary>Show Plan</summary>
 
