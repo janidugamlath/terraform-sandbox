@@ -92,15 +92,15 @@ jobs:
         run: terraform init
 
       - name: Terraform Format
-        run: terraform -chdir=modules/${{ matrix.module }} fmt -check -recursive
+        run: terraform -chdir=./tf-resouces/${{ matrix.module }} fmt -check -recursive
 
       - name: Terraform Validate
-        run: terraform -chdir=modules/${{ matrix.module }} validate
+        run: terraform -chdir=./tf-resouces/${{ matrix.module }} validate
 
       - name: Security Scan
         uses: aquasecurity/tfsec-action@v1.0.3
         with:
-          working_directory: modules/${{ matrix.module }}
+          working_directory: ./tf-resouces${{ matrix.module }}
 
 
       - name: Terraform Plan
