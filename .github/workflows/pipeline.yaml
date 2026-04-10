@@ -92,16 +92,17 @@ jobs:
         run: terraform init
 
       - name: Terraform Format
-        run: terraform -chdir=./tf-resouces/${{ matrix.module }} fmt -check -recursive
+        working-directory: tf-resouces/${{ matrix.module }}
+        run: terraform fmt -check -recursive
 
       - name: Terraform Validate
-        run: terraform -chdir=./tf-resouces/${{ matrix.module }} validate
+        working-directory: tf-resouces/${{ matrix.module }}
+        run: terraform validate
 
       - name: Security Scan
         uses: aquasecurity/tfsec-action@v1.0.3
         with:
-          working_directory: ./tf-resouces${{ matrix.module }}
-
+         working_directory: tf-resouces/${{ matrix.module }}
 
       - name: Terraform Plan
         if: github.event_name == 'pull_request'
