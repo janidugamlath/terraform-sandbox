@@ -41,15 +41,22 @@ jobs:
 
           if [[ "${{ steps.filter.outputs.random_password }}" == "true" ]]; then
             modules+=("\"random_password\"")
-          fi
+          fi 
 
           if [ ${#modules[@]} -eq 0 ]; then
           matrix="[]"
           else
-          matrix=$(printf "[%s]" "$(IFS=,; echo "${modules[*]}")")
+          matrix=$(printf "[%s]" "$(IFS=,; echo "${modules[*]}")")   
           fi
 
           echo "matrix=$matrix" >> $GITHUB_OUTPUT
+
+#Checks which Terraform modules changed
+#Adds them to a list
+#Converts the list into a JSON matrix
+#Passes it to GitHub Actions to run jobs only for changed modules
+
+
 
   # -------------------------------------------------
   # Terraform Job (Matrix)
