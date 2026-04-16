@@ -121,6 +121,7 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: apply
         run: terraform apply -auto-approve -no-color
+        working-directory: ${{ matrix.module }}
 
       - name: Post Apply Results to PR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
