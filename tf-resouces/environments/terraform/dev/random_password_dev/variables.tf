@@ -5,7 +5,7 @@ variable "password_length" {
 
 variable "pet_prefix" {
   type    = string
-  default = "databasetest8"
+  default = "databasetest1"
 }
 
 
