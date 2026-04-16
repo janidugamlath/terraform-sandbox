@@ -3,8 +3,12 @@ name: "Terraform Lifecycle"
 on:
   pull_request:
     branches: [ main ]
+    paths:
+      - tf-resouces/environments/terraform
   push:
     branches: [ main ]
+    paths:
+      - tf-resouces/environments/terraform
 
 jobs:
 
@@ -25,10 +29,15 @@ jobs:
         uses: dorny/paths-filter@v3
         with:
           filters: |
+            random_pet_dev:
+              - 'tf-resouces/environments/terraform/dev/random_pet_dev'
+            random_password_dev:
+              - 'tf-resouces/environments/terraform/dev/random_password_dev'
             random_pet:
-              - 'tf-resouces/random_pet/**'
+              - 'tf-resouces/environments/terraform/prod/random_pet'
             random_password:
-              - 'tf-resouces/random_password/**'
+              - 'tf-resouces/environments/terraform/prod/random_password'
+
 
       - name: Create matrix from changes
         id: set-matrix
@@ -41,6 +50,12 @@ jobs:
 
           if [[ "${{ steps.filter.outputs.random_password }}" == "true" ]]; then
             modules+=("\"random_password\"")
+          fi 
+          if [[ "${{ steps.filter.outputs.random_pet_dev }}" == "true" ]]; then
+            modules+=("\"random_pet_dev\"")
+          fi
+          if [[ "${{ steps.filter.outputs.random_password_dev }}" == "true" ]]; then
+            modules+=("\"random_password_dev\"")
           fi 
 
           if [ ${#modules[@]} -eq 0 ]; then
