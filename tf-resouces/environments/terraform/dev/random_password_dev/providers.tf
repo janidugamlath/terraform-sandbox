@@ -4,7 +4,7 @@ terraform {
     organization = "codimite-janidu"
 
     workspaces {
-      name = "dev-password" 
+      name = "dev-password"
     }
   }
 
