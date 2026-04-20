@@ -168,6 +168,6 @@ jobs:
                 issue_number: prNumber,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: `### ✅ Terraform Apply Successful!\nThe infrastructure has been updated.\n\n<details><summary>Show Apply Output</summary>\n\n\`\`\`terraform\n${process.env.APPLY_OUT}\n\`\`\`\n\n</details>`
+                body: `### Terraform Apply Successful!\nThe infrastructure has been updated.\n\n<details><summary>Show Apply Output</summary>\n\n\`\`\`terraform\n${process.env.APPLY_OUT}\n\`\`\`\n\n</details>`
               });
             }
