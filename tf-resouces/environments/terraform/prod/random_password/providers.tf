@@ -1,5 +1,13 @@
 terraform {
-  backend "local" {}
+  cloud {
+
+    organization = "codimite-janidu"
+
+    workspaces {
+      name = "codimite"
+    }
+  }
+
 
   required_providers {
     random = {
@@ -8,4 +16,3 @@ terraform {
     }
   }
 }
-
