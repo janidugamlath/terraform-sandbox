@@ -26,17 +26,56 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # Using a PAT is CRITICAL to trigger the next workflow run after auto-fix
           token: ${{ secrets.MY_GIT_PAT }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Format (Global)
-        run: terraform fmt -recursive tf-resouces/environments/terraform/
+      - name: Detect Changed Modules
+        id: set-matrix
+        run: |
+          BASE_PATH="tf-resouces/environments/terraform"
+          
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git fetch origin ${{ github.base_ref }}
+            DIFF=$(git diff --name-only origin/${{ github.base_ref }} ${{ github.sha }})
+          else
+            # For pushes, handle first push or existing branch
+            BEFORE_SHA=${{ github.event.before }}
+            if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+              DIFF=$(git show --name-only --format="" ${{ github.sha }})
+            else
+              DIFF=$(git diff --name-only $BEFORE_SHA ${{ github.sha }})
+            fi
+          fi
+
+          # Get unique module paths (up to 5th level)
+          MODULES=$(echo "$DIFF" | grep "^$BASE_PATH/" | cut -d/ -f1-5 | sort -u)
+          
+          if [ -z "$MODULES" ]; then
+            echo "matrix=[]" >> $GITHUB_OUTPUT
+            echo "found_modules=false" >> $GITHUB_OUTPUT
+          else
+            # Save raw list for the fmt step and JSON for the matrix output
+            echo "$MODULES" > changed_dirs.txt
+            JSON_MODULES=$(echo "$MODULES" | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            echo "matrix=$JSON_MODULES" >> $GITHUB_OUTPUT
+            echo "found_modules=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Terraform Format (Targeted)
+        if: steps.set-matrix.outputs.found_modules == 'true'
+        run: |
+          while IFS= read -r dir; do
+            if [ -d "$dir" ]; then
+              echo "Formatting $dir"
+              terraform -chdir="$dir" fmt
+            fi
+          done < changed_dirs.txt
 
       - name: Auto-Commit Fixes
         id: auto_commit
+        if: steps.set-matrix.outputs.found_modules == 'true'
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "style: automated terraform fmt"
@@ -46,30 +85,7 @@ jobs:
         if: steps.auto_commit.outputs.changes_detected == 'true'
         run: |
           echo "Formatting issues were found and fixed automatically."
-          echo "A new workflow run has been triggered by the push. Terminating this run."
           exit 1
-
-      - name: Detect Changed Modules
-        id: set-matrix
-        run: |
-          BASE_PATH="tf-resouces/environments/terraform"
-          
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            # Ensure we have the base branch to compare against
-            git fetch origin ${{ github.base_ref }}
-            DIFF=$(git diff --name-only origin/${{ github.base_ref }} ${{ github.sha }})
-          else
-            DIFF=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
-          fi
-
-          # Extract paths up to the 5th directory level (the module root)
-          MODULES=$(echo "$DIFF" | grep "^$BASE_PATH/" | cut -d/ -f1-5 | sort -u | jq -R -s -c 'split("\n") | map(select(length > 0))')
-          
-          if [ "$MODULES" == "[]" ] || [ -z "$MODULES" ]; then
-            echo "matrix=[]" >> $GITHUB_OUTPUT
-          else
-            echo "matrix=$MODULES" >> $GITHUB_OUTPUT
-          fi
 
   terraform:
     name: "Terraform Operation"
