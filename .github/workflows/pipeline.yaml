@@ -67,7 +67,7 @@ jobs:
         if: steps.changed-files.outputs.any_changed == 'true'
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "style: automated terraform fmt"
+          commit_message: "fix: terraform format issues"
           file_pattern: "environments/**/*.tf"
 
       - name: Notify Format Fix Committed
