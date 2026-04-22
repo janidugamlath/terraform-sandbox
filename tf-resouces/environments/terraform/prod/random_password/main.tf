@@ -6,5 +6,5 @@ resource "random_pet" "db_name" {
 resource "random_password" "password" {
   length           = var.password_length
   special          = true
-  override_special = "!#$%&*()-_=+[]{}<>:?"
+  override_special = "!#$%&*()-_=+[]{}<>:?" #use only these special charaters for create password 
 }
