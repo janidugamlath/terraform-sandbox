@@ -36,6 +36,7 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ steps.app_token.outputs.token }}
+          persist-credentials: true
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -68,7 +69,7 @@ jobs:
         with:
           commit_message: "style: automated terraform fmt"
           file_pattern: "environments/**/*.tf"
-          token: ${{ steps.app_token.outputs.token }}
+          # token: ${{ steps.app_token.outputs.token }}
 
       - name: Notify Format Fix Committed
         if: steps.auto_commit.outputs.changes_detected == 'true'
