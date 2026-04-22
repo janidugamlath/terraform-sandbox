@@ -4,11 +4,11 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "environments/terraform/**"
+      - "environments/**/*.tf"
   push:
     branches: [main]
     paths:
-      - "environments/terraform/**"
+      - "environments/**/*.tf"
 
 jobs:
   format-and-detect:
@@ -17,113 +17,96 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+
     outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      matrix: ${{ steps.changed-files.outputs.all_changed_files }}
+      has_changes: ${{ steps.changed-files.outputs.any_changed }}
       fmt_changed: ${{ steps.auto_commit.outputs.changes_detected }}
 
     steps:
+      - name: Generate GitHub App Token
+        id: app_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.MY_GIT_PAT }}
+          token: ${{ steps.app_token.outputs.token }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
       - name: Detect Changed Modules
-        id: set-matrix
-        run: |
-          BASE_PATH="tf-resouces/environments/terraform"
-          
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git fetch origin ${{ github.base_ref }}
-            DIFF=$(git diff --name-only origin/${{ github.base_ref }} ${{ github.sha }})
-          else
-            # For pushes, handle first push or existing branch
-            BEFORE_SHA=${{ github.event.before }}
-            if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
-              DIFF=$(git show --name-only --format="" ${{ github.sha }})
-            else
-              DIFF=$(git diff --name-only $BEFORE_SHA ${{ github.sha }})
-            fi
-          fi
-
-          # Get unique module paths (up to 5th level)
-          MODULES=$(echo "$DIFF" | grep "^$BASE_PATH/" | cut -d/ -f1-5 | sort -u)
-          
-          if [ -z "$MODULES" ]; then
-            echo "matrix=[]" >> $GITHUB_OUTPUT
-            echo "found_modules=false" >> $GITHUB_OUTPUT
-          else
-            # Save raw list for the fmt step and JSON for the matrix output
-            echo "$MODULES" > changed_dirs.txt
-            JSON_MODULES=$(echo "$MODULES" | jq -R -s -c 'split("\n") | map(select(length > 0))')
-            echo "matrix=$JSON_MODULES" >> $GITHUB_OUTPUT
-            echo "found_modules=true" >> $GITHUB_OUTPUT
-          fi
+        id: changed-files
+        uses: tj-actions/changed-files@v47
+        with:
+          files: "environments/**/*.tf"
+          dir_names: "true"
+          dir_names_max_depth: "3"
+          dir_names_exclude_current_dir: "true"
+          json: "true"
+          escape_json: "false"
 
       - name: Terraform Format (Targeted)
-        if: steps.set-matrix.outputs.found_modules == 'true'
+        if: steps.changed-files.outputs.any_changed == 'true'
         run: |
-          while IFS= read -r dir; do
+          echo '${{ steps.changed-files.outputs.all_changed_files }}' | jq -r '.[]' | while IFS= read -r dir; do
             if [ -d "$dir" ]; then
-              echo "Formatting $dir"
-              terraform -chdir="$dir" fmt
+              echo "Running terraform fmt on: $dir"
+              terraform fmt "$dir"
             fi
-          done < changed_dirs.txt
+          done
 
-      - name: Auto-Commit Fixes
+      - name: Auto-Commit Format Fixes
         id: auto_commit
-        if: steps.set-matrix.outputs.found_modules == 'true'
+        if: steps.changed-files.outputs.any_changed == 'true'
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "style: automated terraform fmt"
-          file_pattern: "tf-resouces/environments/terraform/**/*.tf"
+          file_pattern: "environments/**/*.tf"
+          token: ${{ steps.app_token.outputs.token }}
 
-      - name: Stop if Formatted
+      - name: Notify Format Fix Committed
         if: steps.auto_commit.outputs.changes_detected == 'true'
         run: |
-          echo "Formatting issues were found and fixed automatically."
-          exit 1
+          echo "Terraform formatting issues were found and fixed automatically."
+          echo "A new commit has been pushed. The workflow will re-run on that commit."
 
   terraform:
-    name: "Terraform Operation"
+    name: "Terraform (${{ matrix.module }})"
     needs: format-and-detect
-    # Proceed only if there are changes and we didn't just restart due to a format fix
-    if: needs.format-and-detect.outputs.matrix != '[]' && needs.format-and-detect.outputs.fmt_changed != 'true'
+    if: needs.format-and-detect.outputs.has_changes == 'true' && needs.format-and-detect.outputs.fmt_changed != 'true'
     runs-on: ubuntu-latest
-    env:
-      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+    permissions:
+      contents: read
+      pull-requests: write
     strategy:
       fail-fast: false
       matrix:
         module: ${{ fromJson(needs.format-and-detect.outputs.matrix) }}
-    
-    permissions:
-      contents: read
-      pull-requests: write
 
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: true
-          cli_config_credentials_hostname: 'app.terraform.io'
-          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
       - name: Terraform Init
         run: terraform init
         working-directory: ${{ matrix.module }}
 
       - name: Terraform Validate
-        run: terraform validate
+        run: terraform validate -no-color
         working-directory: ${{ matrix.module }}
 
-      - name: Security Scan
+      - name: Security Scan (tfsec)
         uses: aquasecurity/tfsec-action@v1.0.3
         with:
           working_directory: ${{ matrix.module }}
@@ -132,24 +115,35 @@ jobs:
       - name: Terraform Plan
         if: github.event_name == 'pull_request'
         id: plan
-        run: terraform plan -no-color
+        run: terraform plan -out=tfplan.binary -no-color 2>&1 | tee plan.txt
+        working-directory: ${{ matrix.module }}
+
+      - name: Convert Plan to Text
+        if: github.event_name == 'pull_request'
+        run: terraform show -no-color tfplan.binary > plan_readable.txt
         working-directory: ${{ matrix.module }}
 
       - name: Post Plan to PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         env:
-          PLAN_DATA: "${{ steps.plan.outputs.stdout }}"
           MODULE_NAME: "${{ matrix.module }}"
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const output = `#### Module: \`${process.env.MODULE_NAME}\`
-            #### Terraform Plan 📖 \`${{ steps.plan.outcome }}\`
+            const fs = require('fs');
+            const planText = fs.readFileSync('${{ matrix.module }}/plan_readable.txt', 'utf8');
+            const planOutcome = '${{ steps.plan.outcome }}';
+            const moduleName = process.env.MODULE_NAME;
+
+            const output = `#### Module: \`${moduleName}\`
+            #### Terraform Plan 📖 \`${planOutcome}\`
             <details><summary>Show Plan</summary>
+
             \`\`\`terraform
-            ${process.env.PLAN_DATA}
+            ${planText}
             \`\`\`
+
             </details>`;
 
             github.rest.issues.createComment({
@@ -159,31 +153,59 @@ jobs:
               body: output
             });
 
+      - name: Terraform Plan (Pre-Apply)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: plan_apply
+        run: terraform plan -out=tfplan.binary -no-color
+        working-directory: ${{ matrix.module }}
+
       - name: Terraform Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: apply
-        run: terraform apply -auto-approve -no-color
+        run: terraform apply -no-color tfplan.binary 2>&1 | tee apply.txt
         working-directory: ${{ matrix.module }}
 
       - name: Post Apply Results to PR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/github-script@v7
         env:
-          APPLY_OUT: "${{ steps.apply.outputs.stdout }}"
+          MODULE_NAME: "${{ matrix.module }}"
+          APPLY_OUTCOME: "${{ steps.apply.outcome }}"
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const fs = require('fs');
+            const applyText = fs.readFileSync('${{ matrix.module }}/apply.txt', 'utf8');
+            const moduleName = process.env.MODULE_NAME;
+            const applyOutcome = process.env.APPLY_OUTCOME;
+
+            const statusEmoji = applyOutcome === 'success' ? '✅' : '❌';
+            const statusLabel = applyOutcome === 'success' ? 'Succeeded' : 'Failed';
+
+            const body = `#### Module: \`${moduleName}\`
+            #### Terraform Apply ${statusEmoji} \`${statusLabel}\`
+            <details><summary>Show Apply Output</summary>
+
+            \`\`\`terraform
+            ${applyText}
+            \`\`\`
+
+            </details>`;
+
             const result = await github.rest.repos.listPullRequestsAssociatedWithCommit({
               owner: context.repo.owner,
               repo: context.repo.repo,
               commit_sha: context.sha,
             });
-            const prNumber = result.data.length > 0 ? result.data[0].number : null;
-            if (prNumber) {
+
+            const pr = result.data.length > 0 ? result.data[0] : null;
+            if (pr) {
               github.rest.issues.createComment({
-                issue_number: prNumber,
+                issue_number: pr.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: `### Terraform Apply Successful!\nThe infrastructure has been updated.\n\n<details><summary>Show Apply Output</summary>\n\n\`\`\`terraform\n${process.env.APPLY_OUT}\n\`\`\`\n\n</details>`
+                body: body
               });
+            } else {
+              core.warning(`No associated PR found for commit ${context.sha}. Apply output not posted.`);
             }

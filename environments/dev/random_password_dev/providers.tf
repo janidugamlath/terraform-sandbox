@@ -1,14 +1,4 @@
 terraform {
-  cloud {
-
-    organization = "codimite-janidu"
-
-    workspaces {
-      name = "dev-password"
-    }
-  }
-
-
   required_providers {
     random = {
       source  = "hashicorp/random"
