@@ -56,12 +56,14 @@ jobs:
 
           # Extract unique module directories (dirs that contain a main.tf)
           MODULES=""
-          while IFS= read -r file; do
-            dir=$(dirname "$file")
-            if [ -f "$dir/main.tf" ]; then
-              MODULES="$MODULES\n$dir"
-            fi
-          done <<< "$CHANGED_FILES"
+          if [ -n "$CHANGED_FILES" ]; then
+            while IFS= read -r file; do
+              dir=$(dirname "$file")
+              if [ -f "$dir/main.tf" ]; then
+                MODULES="$MODULES\n$dir"
+              fi
+            done <<< "$CHANGED_FILES"
+          fi
 
           MODULES=$(printf "$MODULES" | sort -u | grep -v '^$')
 
@@ -100,7 +102,7 @@ jobs:
   terraform:
     name: "Terraform (${{ matrix.module }})"
     needs: format-and-detect
-    if: needs.format-and-detect.outputs.matrix != '[]' && needs.format-and-detect.outputs.fmt_changed != 'true'
+    if: needs.format-and-detect.outputs.matrix != '[]' && needs.format-and-detect.outputs.matrix != '' && needs.format-and-detect.outputs.fmt_changed != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
