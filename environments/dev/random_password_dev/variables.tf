@@ -1,11 +1,11 @@
 variable "password_length" {
   type    = number
-  default = 16
+  default= 16
 }
 
 variable "pet_prefix" {
-  type    = string
-  default = "database2"
+  type= string
+  default="database2"
 }
 
 
