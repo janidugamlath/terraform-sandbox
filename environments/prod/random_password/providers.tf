@@ -4,7 +4,7 @@ terraform {
     organization = "codimite-janidu"
 
     workspaces {
-      name = "dev-pet"
+      name = "prod-password"
     }
   }
   required_providers {
