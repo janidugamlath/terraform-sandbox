@@ -143,8 +143,9 @@ jobs:
             <details><summary>Show Plan</summary>
 
             \`\`\`terraform
-            ${process.env.PLAN_DATA}
+            ${planText}
             \`\`\`
+
             </details>`;
 
             github.rest.issues.createComment({
@@ -154,32 +155,58 @@ jobs:
               body: output
             });
 
+      - name: Terraform Plan (Pre-Apply)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: plan_apply
+        run: terraform plan -out=tfplan.binary -no-color
+        working-directory: ${{ matrix.module }}
+
       - name: Terraform Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: apply
-        run: terraform apply -auto-approve -no-color
+        run: terraform apply -no-color tfplan.binary 2>&1 | tee apply.txt
         working-directory: ${{ matrix.module }}
 
       - name: Post Apply Results to PR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/github-script@v7
         env:
-          APPLY_OUT: "${{ steps.apply.outputs.stdout }}"
+          MODULE_NAME: "${{ matrix.module }}"
+          APPLY_OUTCOME: "${{ steps.apply.outcome }}"
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const fs = require('fs');
+            const applyText = fs.readFileSync('${{ matrix.module }}/apply.txt', 'utf8');
+            const moduleName = process.env.MODULE_NAME;
+            const applyOutcome = process.env.APPLY_OUTCOME;
+
+            const statusEmoji = applyOutcome === 'success' ? '✅' : '❌';
+            const statusLabel = applyOutcome === 'success' ? 'Succeeded' : 'Failed';
+
+            const body = `#### Module: \`${moduleName}\`
+            #### Terraform Apply ${statusEmoji} \`${statusLabel}\`
+            <details><summary>Show Apply Output</summary>
+
+            \`\`\`terraform
+            ${applyText}
+            \`\`\`
+
+            </details>`;
+
             const result = await github.rest.repos.listPullRequestsAssociatedWithCommit({
               owner: context.repo.owner,
               repo: context.repo.repo,
               commit_sha: context.sha,
             });
-            const prNumber = result.data.length > 0 ? result.data[0].number : null;
-            if (prNumber) {
+
+            const pr = result.data.length > 0 ? result.data[0] : null;
+            if (pr) {
               github.rest.issues.createComment({
                 issue_number: pr.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: `### Terraform Apply Successful!\nThe infrastructure has been updated.\n\n<details><summary>Show Apply Output</summary>\n\n\`\`\`terraform\n${process.env.APPLY_OUT}\n\`\`\`\n\n</details>`
+                body: body
               });
             } else {
               core.warning(`No associated PR found for commit ${context.sha}. Apply output not posted.`);
