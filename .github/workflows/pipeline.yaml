@@ -194,6 +194,7 @@ jobs:
         id: plan
         run: terraform plan -out=tfplan.binary -no-color 2>&1 | tee plan.txt
         working-directory: ${{ matrix.module }}
+        
 
       - name: Convert Plan to Text
         if: github.event_name == 'pull_request'
@@ -233,7 +234,10 @@ jobs:
       - name: Terraform Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: apply
-        run: terraform apply -no-color tfplan.binary 2>&1 | tee apply.txt
+        # We run plan and apply together because the binary from the PR is gone
+        run: |
+          terraform plan -out=tfplan.binary -no-color
+          terraform apply -no-color tfplan.binary 2>&1 | tee apply.txt
         working-directory: ${{ matrix.module }}
 
       - name: Post Apply Results to PR
