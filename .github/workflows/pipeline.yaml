@@ -109,11 +109,16 @@ jobs:
         run: terraform validate -no-color
         working-directory: ${{ matrix.module }}
 
+      - name: Install tfsec
+        uses: aquasecurity/tfsec-installer-action@v3
+        with:
+          # Optional: specify a version, or it defaults to latest
+          tfsec_version: v1.28.1
+
       - name: Run tfsec
         id: tfsec_run
+        # We remove '|| true' because --soft-fail handles the exit code
         run: |
-          # Use --no-colour to ensure the text file is clean for GitHub Comments
-          # Use --soft-fail so the workflow continues to the commenting step
           tfsec ${{ matrix.module }} --format lovely --no-colour --soft-fail > tfsec_report.txt
 
       - name: Post Result
@@ -125,14 +130,16 @@ jobs:
             const path = 'tfsec_report.txt';
             const moduleName = "${{ matrix.module }}";
             
-            let report = "No output captured from tfsec.";
+            let report = "";
             
             if (fs.existsSync(path)) {
                 report = fs.readFileSync(path, 'utf8').trim();
             }
 
-            // If tfsec found nothing, report will be empty, so we provide a default
-            if (!report) { report = "No security issues found!"; }
+            // Logic to handle empty files or command failures
+            if (!report || report.length === 0) {
+              report = "tfsec failed to run or found no files in this directory.";
+            }
 
             const body = `### 🛡️ tfsec Report: \`${moduleName}\`
             \`\`\`text
