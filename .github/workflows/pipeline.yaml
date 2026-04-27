@@ -109,20 +109,47 @@ jobs:
         run: terraform validate -no-color
         working-directory: ${{ matrix.module }}
 
-      - name: Run tfsec and save to file
+      - name: Install tfsec binary
+        run: |
+          # Download the latest binary directly from GitHub releases
+          # This works on standard Ubuntu runners
+          curl -L -o tfsec https://github.com/aquasecurity/tfsec/releases/latest/download/tfsec-linux-amd64
+          chmod +x tfsec
+          sudo mv tfsec /usr/local/bin/
+
+      - name: Run tfsec
         id: tfsec_run
         run: |
-          tfsec ${{ matrix.module }} --format lovely > tfsec_report.txt || true
+          # Run the scan and pipe output to a file
+          tfsec ${{ matrix.module }} --format lovely --no-colour --soft-fail > tfsec_report.txt
 
-      - name: Post tfsec Result to PR
+      - name: Post tfsec Result
         uses: actions/github-script@v7
+        if: always()
         with:
           script: |
             const fs = require('fs');
-            const report = fs.readFileSync('tfsec_report.txt', 'utf8');
-            const module = "${{ matrix.module }}";
+            const path = 'tfsec_report.txt';
+            const moduleName = "${{ matrix.module }}";
             
-            const body = `### 🛡️ tfsec Report: \`${module}\`
+            let report = "";
+            
+            if (fs.existsSync(path)) {
+                report = fs.readFileSync(path, 'utf8').trim();
+            }
+
+            // Logic to handle empty files or command failures
+            if (!report || report.length === 0) {
+              report = "No security issues found or directory is empty.";
+            }
+
+            // GitHub comments have a 65k character limit. 
+            // We'll trim the report if it's too long to prevent the script from failing.
+            if (report.length > 60000) {
+              report = report.substring(0, 60000) + "\n... (Report truncated due to size)";
+            }
+
+            const body = `### 🛡️ tfsec Report: \`${moduleName}\`
             \`\`\`text
             ${report}
             \`\`\``;
@@ -159,7 +186,7 @@ jobs:
             const moduleName = process.env.MODULE_NAME;
 
             const output = `#### Module: \`${moduleName}\`
-            #### Terraform Plan 📖 \`${planOutcome}\`
+            #### Terraform Plan \`${planOutcome}\`
             <details><summary>Show Plan</summary>
 
             \`\`\`terraform
