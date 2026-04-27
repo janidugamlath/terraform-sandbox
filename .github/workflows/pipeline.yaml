@@ -110,7 +110,7 @@ jobs:
         working-directory: ${{ matrix.module }}
 
       - name: Install tfsec
-        uses: aquasecurity/tfsec-action@v1.0.3
+        uses: aquasecurity/tfsec-installer-action@v3
 
       - name: Run tfsec
         id: tfsec_run
