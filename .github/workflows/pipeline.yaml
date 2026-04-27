@@ -1,4 +1,4 @@
-name: "Terraform Lifecycle"
+name: "Terraform Module GitOps"
 
 on:
   pull_request:
@@ -13,8 +13,8 @@ on:
       - "environments/**/*.json"
 
 jobs:
-  format-and-detect:
-    name: "Format & Detect Changes"
+  terraform-fmt-and-change-detection:
+    name: "terraform-fmt-and-change-detection"
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -53,7 +53,7 @@ jobs:
           json: "true"
           escape_json: "false"
 
-      - name: Terraform Format (Targeted)
+      - name: Terraform Format
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
           echo '${{ steps.changed-files.outputs.all_changed_files }}' | jq -r '.[]' | while IFS= read -r dir; do
@@ -79,8 +79,8 @@ jobs:
 
   terraform:
     name: "Terraform (${{ matrix.module }})"
-    needs: format-and-detect
-    if: needs.format-and-detect.outputs.has_changes == 'true' && needs.format-and-detect.outputs.fmt_changed != 'true'
+    needs: terraform-fmt-and-change-detection
+    if: needs.terraform-fmt-and-change-detection.outputs.has_changes == 'true' && needs.terraform-fmt-and-change-detection.outputs.fmt_changed != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -88,7 +88,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: ${{ fromJson(needs.format-and-detect.outputs.matrix) }}
+        module: ${{ fromJson(needs.terraform-fmt-and-change-detection.outputs.matrix) }}
 
     steps:
       - name: Checkout
@@ -201,12 +201,6 @@ jobs:
               repo: context.repo.repo,
               body: output
             });
-
- #     - name: Terraform Plan (Pre-Apply)
- #       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
- #       id: plan_apply
- #       run: terraform plan -out=tfplan.binary -no-color
- #       working-directory: ${{ matrix.module }}
 
       - name: Terraform Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
