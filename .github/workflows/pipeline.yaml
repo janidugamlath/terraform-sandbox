@@ -110,10 +110,7 @@ jobs:
         working-directory: ${{ matrix.module }}
 
       - name: Install tfsec
-        uses: aquasecurity/tfsec-installer-action@v3
-        with:
-          # Optional: specify a version, or it defaults to latest
-          tfsec_version: v1.28.1
+        uses: aquasecurity/tfsec-action@v1.0.3
 
       - name: Run tfsec
         id: tfsec_run
@@ -121,7 +118,7 @@ jobs:
         run: |
           tfsec ${{ matrix.module }} --format lovely --no-colour --soft-fail > tfsec_report.txt
 
-      - name: Post Result
+      - name: Post tfsec Result
         uses: actions/github-script@v7
         if: always()
         with:
