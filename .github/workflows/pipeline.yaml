@@ -77,6 +77,86 @@ jobs:
           echo "Terraform formatting issues were found and fixed automatically."
           echo "A new commit has been pushed. The workflow will re-run on that commit."
 
+      - name: Revoke GitHub App Token
+        if: always()
+        run: |
+          curl -X DELETE \
+            -H "Authorization: Bearer ${{ steps.app_token.outputs.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/installation/token
+
+  terraform-security-scan:
+    name: "Security Scan (${{ matrix.module }})"
+    needs: terraform-fmt-and-change-detection
+    if: needs.terraform-fmt-and-change-detection.outputs.has_changes == 'true' && needs.terraform-fmt-and-change-detection.outputs.fmt_changed != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJson(needs.terraform-fmt-and-change-detection.outputs.matrix) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tfsec binary
+        run: |
+          curl -L -o tfsec https://github.com/aquasecurity/tfsec/releases/latest/download/tfsec-linux-amd64
+          chmod +x tfsec
+          sudo mv tfsec /usr/local/bin/
+
+      - name: Run tfsec
+        id: tfsec_run
+        run: |
+          # We use --soft-fail so the workflow doesn't block, 
+          # but the report will still show the vulnerabilities.
+          tfsec ${{ matrix.module }} --format lovely --no-colour --soft-fail > tfsec_report.txt
+
+      - name: Post tfsec Result
+        uses: actions/github-script@v7
+        if: always()
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'tfsec_report.txt';
+            const moduleName = "${{ matrix.module }}";
+            
+            // Ensure we are in a PR context before trying to comment
+            if (!context.issue.number) {
+              console.log("No issue/PR number found. Skipping comment.");
+              return;
+            }
+
+            let report = "";
+            if (fs.existsSync(path)) {
+                report = fs.readFileSync(path, 'utf8').trim();
+            }
+
+            if (!report || report.length === 0) {
+              report = "No security issues found or directory is empty.";
+            }
+
+            if (report.length > 60000) {
+              report = report.substring(0, 60000) + "\n... (Report truncated due to size)";
+            }
+
+            const body = `### 🛡️ tfsec Report: \`${moduleName}\`
+            \`\`\`text
+            ${report}
+            \`\`\``;
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+    
+
+
   terraform:
     name: "Terraform (${{ matrix.module }})"
     needs: terraform-fmt-and-change-detection
@@ -108,58 +188,6 @@ jobs:
       - name: Terraform Validate
         run: terraform validate -no-color
         working-directory: ${{ matrix.module }}
-
-      - name: Install tfsec binary
-        run: |
-          # Download the latest binary directly from GitHub releases
-          # This works on standard Ubuntu runners
-          curl -L -o tfsec https://github.com/aquasecurity/tfsec/releases/latest/download/tfsec-linux-amd64
-          chmod +x tfsec
-          sudo mv tfsec /usr/local/bin/
-
-      - name: Run tfsec
-        id: tfsec_run
-        run: |
-          # Run the scan and pipe output to a file
-          tfsec ${{ matrix.module }} --format lovely --no-colour --soft-fail > tfsec_report.txt
-
-      - name: Post tfsec Result
-        uses: actions/github-script@v7
-        if: always()
-        with:
-          script: |
-            const fs = require('fs');
-            const path = 'tfsec_report.txt';
-            const moduleName = "${{ matrix.module }}";
-            
-            let report = "";
-            
-            if (fs.existsSync(path)) {
-                report = fs.readFileSync(path, 'utf8').trim();
-            }
-
-            // Logic to handle empty files or command failures
-            if (!report || report.length === 0) {
-              report = "No security issues found or directory is empty.";
-            }
-
-            // GitHub comments have a 65k character limit. 
-            // We'll trim the report if it's too long to prevent the script from failing.
-            if (report.length > 60000) {
-              report = report.substring(0, 60000) + "\n... (Report truncated due to size)";
-            }
-
-            const body = `### 🛡️ tfsec Report: \`${moduleName}\`
-            \`\`\`text
-            ${report}
-            \`\`\``;
-
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
 
       - name: Terraform Plan
         if: github.event_name == 'pull_request'
