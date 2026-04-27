@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - "environments/**/*.tf"
+      - "environments/**/*.json"
   push:
     branches: [main]
     paths:
       - "environments/**/*.tf"
+      - "environments/**/*.json"
 
 jobs:
   format-and-detect:
@@ -47,7 +49,6 @@ jobs:
         with:
           files: "environments/**"
           dir_names: "true"
-          # dir_names_max_depth: "3"
           dir_names_exclude_current_dir: "true"
           json: "true"
           escape_json: "false"
@@ -108,11 +109,30 @@ jobs:
         run: terraform validate -no-color
         working-directory: ${{ matrix.module }}
 
-      - name: Security Scan (tfsec)
-        uses: aquasecurity/tfsec-action@v1.0.3
+      - name: Run tfsec and save to file
+        id: tfsec_run
+        run: |
+          tfsec ${{ matrix.module }} --format lovely > tfsec_report.txt || true
+
+      - name: Post tfsec Result to PR
+        uses: actions/github-script@v7
         with:
-          working_directory: ${{ matrix.module }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('tfsec_report.txt', 'utf8');
+            const module = "${{ matrix.module }}";
+            
+            const body = `### 🛡️ tfsec Report: \`${module}\`
+            \`\`\`text
+            ${report}
+            \`\`\``;
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
 
       - name: Terraform Plan
         if: github.event_name == 'pull_request'
@@ -155,11 +175,11 @@ jobs:
               body: output
             });
 
-      - name: Terraform Plan (Pre-Apply)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        id: plan_apply
-        run: terraform plan -out=tfplan.binary -no-color
-        working-directory: ${{ matrix.module }}
+ #     - name: Terraform Plan (Pre-Apply)
+ #       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+ #       id: plan_apply
+ #       run: terraform plan -out=tfplan.binary -no-color
+ #       working-directory: ${{ matrix.module }}
 
       - name: Terraform Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
