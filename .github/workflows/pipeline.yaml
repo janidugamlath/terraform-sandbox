@@ -109,20 +109,32 @@ jobs:
         run: terraform validate -no-color
         working-directory: ${{ matrix.module }}
 
-      - name: Run tfsec and save to file
+      - name: Run tfsec
         id: tfsec_run
         run: |
-          tfsec ${{ matrix.module }} --format lovely > tfsec_report.txt || true
+          # Use --no-colour to ensure the text file is clean for GitHub Comments
+          # Use --soft-fail so the workflow continues to the commenting step
+          tfsec ${{ matrix.module }} --format lovely --no-colour --soft-fail > tfsec_report.txt
 
-      - name: Post tfsec Result to PR
+      - name: Post Result
         uses: actions/github-script@v7
+        if: always()
         with:
           script: |
             const fs = require('fs');
-            const report = fs.readFileSync('tfsec_report.txt', 'utf8');
-            const module = "${{ matrix.module }}";
+            const path = 'tfsec_report.txt';
+            const moduleName = "${{ matrix.module }}";
             
-            const body = `### 🛡️ tfsec Report: \`${module}\`
+            let report = "No output captured from tfsec.";
+            
+            if (fs.existsSync(path)) {
+                report = fs.readFileSync(path, 'utf8').trim();
+            }
+
+            // If tfsec found nothing, report will be empty, so we provide a default
+            if (!report) { report = "No security issues found!"; }
+
+            const body = `### 🛡️ tfsec Report: \`${moduleName}\`
             \`\`\`text
             ${report}
             \`\`\``;
@@ -159,7 +171,7 @@ jobs:
             const moduleName = process.env.MODULE_NAME;
 
             const output = `#### Module: \`${moduleName}\`
-            #### Terraform Plan 📖 \`${planOutcome}\`
+            #### Terraform Plan \`${planOutcome}\`
             <details><summary>Show Plan</summary>
 
             \`\`\`terraform
