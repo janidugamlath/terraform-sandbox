@@ -1,13 +1,10 @@
 name: "Terraform Module GitOps"
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "environments/**/*.tf"
-      - "environments/**/*.json"
+  issue_comment:
+    types: [ created ]
   push:
-    branches: [main]
+    branches: [ main ]
     paths:
       - "environments/**/*.tf"
       - "environments/**/*.json"
@@ -15,11 +12,14 @@ on:
 jobs:
   terraform-fmt-and-change-detection:
     name: "terraform-fmt-and-change-detection"
+    # Only run on push to main OR a /plan comment on a PR
+    if: |
+      github.event_name == 'push' || 
+      (github.event.issue.pull_request && contains(github.event.comment.body, '/plan'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
-
     outputs:
       matrix: ${{ steps.changed-files.outputs.all_changed_files }}
       has_changes: ${{ steps.changed-files.outputs.any_changed }}
@@ -36,6 +36,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          # This line is key: it handles both Push and Comment triggers
+          ref: ${{ github.event.pull_request.head.sha || github.event.issue.pull_request
+            && format('refs/pull/{0}/head', github.event.issue.number) ||
+            github.sha }}
           fetch-depth: 0
           token: ${{ steps.app_token.outputs.token }}
           persist-credentials: true
@@ -123,7 +127,7 @@ jobs:
             const fs = require('fs');
             const path = 'tfsec_report.txt';
             const moduleName = "${{ matrix.module }}";
-            
+
             // Ensure we are in a PR context before trying to comment
             if (!context.issue.number) {
               console.log("No issue/PR number found. Skipping comment.");
@@ -154,13 +158,12 @@ jobs:
               repo: context.repo.repo,
               body: body
             });
-    
-
 
   terraform:
     name: "Terraform (${{ matrix.module }})"
     needs: terraform-fmt-and-change-detection
-    if: needs.terraform-fmt-and-change-detection.outputs.has_changes == 'true' && needs.terraform-fmt-and-change-detection.outputs.fmt_changed != 'true'
+    if: needs.terraform-fmt-and-change-detection.outputs.has_changes == 'true' &&
+      needs.terraform-fmt-and-change-detection.outputs.fmt_changed != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -173,12 +176,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.issue.pull_request && format('refs/pull/{0}/head', github.event.issue.number) || github.sha }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: true
-          cli_config_credentials_hostname: 'app.terraform.io'
+          cli_config_credentials_hostname: "app.terraform.io"
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
       - name: Terraform Init
@@ -190,11 +195,11 @@ jobs:
         working-directory: ${{ matrix.module }}
 
       - name: Terraform Plan
-        if: github.event_name == 'pull_request'
+        if: github.event.issue.pull_request && contains(github.event.comment.body, '/plan')
         id: plan
         run: terraform plan -out=tfplan.binary -no-color 2>&1 | tee plan.txt
         working-directory: ${{ matrix.module }}
-        
+
       - name: Convert Plan to Text
         if: github.event_name == 'pull_request'
         run: terraform show -no-color tfplan.binary > plan_readable.txt
