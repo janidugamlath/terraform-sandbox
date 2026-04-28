@@ -1,6 +1,6 @@
 resource "random_pet" "db_name" {
   prefix = var.pet_prefix
-  length = 2
+  length = 3
 }
 
 resource "random_password" "password" {
