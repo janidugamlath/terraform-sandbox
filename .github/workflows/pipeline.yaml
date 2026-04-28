@@ -168,6 +168,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      actions: write
+      
     strategy:
       fail-fast: false
       matrix:
@@ -234,6 +236,36 @@ jobs:
               repo: context.repo.repo,
               body: output
             });
+
+      - name: Cleanup Old Plan Artifacts
+        if: contains(github.event.comment.body, '/plan')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const artifactName = `terraform-plan-${{ strategy.job-index }}`;
+            
+            const artifacts = await github.rest.actions.listArtifactsForRepo({
+              owner,
+              repo,
+              name: artifactName,
+            });
+
+            for (const artifact of artifacts.data.artifacts) {
+              console.log(`Deleting old artifact: ${artifact.name} (ID: ${artifact.id})`);
+              await github.rest.actions.deleteArtifact({
+                owner,
+                repo,
+                artifact_id: artifact.id,
+              });
+            }
+
+      - name: Upload New Plan Artifact
+        if: contains(github.event.comment.body, '/plan')
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ strategy.job-index }}
+          path: ${{ matrix.module }}/tfplan.binary
 
       - name: Terraform Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
