@@ -15,7 +15,7 @@ jobs:
     # Only run on push to main OR a /plan comment on a PR
     if: |
       github.event_name == 'push' || 
-      (github.event.issue.pull_request && contains(github.event.comment.body, '/plan'))
+      (github.event.issue.pull_request && trim(github.event.comment.body) == '/plan')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -169,7 +169,7 @@ jobs:
       contents: write
       pull-requests: write
       actions: write
-      
+
     strategy:
       fail-fast: false
       matrix:
@@ -197,18 +197,18 @@ jobs:
         working-directory: ${{ matrix.module }}
 
       - name: Terraform Plan
-        if: github.event.issue.pull_request && contains(github.event.comment.body, '/plan')
+        if: github.event.issue.pull_request && trim(github.event.comment.body) == '/plan')
         id: plan
         run: terraform plan -out=tfplan.binary -no-color 2>&1 | tee plan.txt
         working-directory: ${{ matrix.module }}
 
       - name: Convert Plan to Text
-        if: github.event.issue.pull_request && contains(github.event.comment.body, '/plan')
+        if: github.event.issue.pull_request && trim(github.event.comment.body) == '/plan')
         run: terraform show -no-color tfplan.binary > plan_readable.txt
         working-directory: ${{ matrix.module }}
 
       - name: Post Plan to PR
-        if: github.event.issue.pull_request && contains(github.event.comment.body, '/plan')
+        if: github.event.issue.pull_request && trim(github.event.comment.body) == '/plan')
         uses: actions/github-script@v7
         env:
           MODULE_NAME: "${{ matrix.module }}"
