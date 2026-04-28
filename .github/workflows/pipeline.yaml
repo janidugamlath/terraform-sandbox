@@ -201,12 +201,12 @@ jobs:
         working-directory: ${{ matrix.module }}
 
       - name: Convert Plan to Text
-        if: github.event_name == 'pull_request'
+        if: github.event.issue.pull_request && contains(github.event.comment.body, '/plan')
         run: terraform show -no-color tfplan.binary > plan_readable.txt
         working-directory: ${{ matrix.module }}
 
       - name: Post Plan to PR
-        if: github.event_name == 'pull_request'
+        if: github.event.issue.pull_request && contains(github.event.comment.body, '/plan')
         uses: actions/github-script@v7
         env:
           MODULE_NAME: "${{ matrix.module }}"
